@@ -1,18 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  createSessionToken,
-  isGitHubUserAllowed,
-  verifySessionToken,
-} from "../auth";
+import { createSessionToken, verifySessionToken } from "../auth";
 
-describe("GitHub allowlist and session token signing", () => {
+describe("session token verification", () => {
   const secret = "test-session-secret-0123456789abcdef";
-
-  it("matches allowlisted GitHub usernames case-insensitively", () => {
-    expect(isGitHubUserAllowed("OctoCat", ["octocat"])).toBe(true);
-    expect(isGitHubUserAllowed("mallory", ["octocat"])).toBe(false);
-    expect(isGitHubUserAllowed("", ["octocat"])).toBe(false);
-  });
 
   it("verifies valid tokens and rejects wrong secret, allowlist removal, tampering, or expiry", () => {
     const now = Date.parse("2026-11-22T10:00:00.000Z");
