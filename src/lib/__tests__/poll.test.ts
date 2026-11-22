@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computePollDiff, deduplicateComments } from "../poll";
+import { computePollDiff } from "../poll";
 import type { HnComment, HnStory } from "../hn";
 import type { EventRow } from "../scopedb";
 
@@ -33,17 +33,6 @@ function makeComment(overrides: Partial<HnComment> = {}): HnComment {
     ...overrides,
   };
 }
-
-describe("deduplicateComments", () => {
-  it("prefers reply_to_me over story_comment when the same comment appears twice", () => {
-    const deduped = deduplicateComments([
-      makeComment({ commentId: 2001, kind: "story_comment" }),
-      makeComment({ commentId: 2001, kind: "reply_to_me" }),
-    ]);
-    expect(deduped).toHaveLength(1);
-    expect(deduped[0].kind).toBe("reply_to_me");
-  });
-});
 
 describe("computePollDiff", () => {
   it("seeds baseline without emitting notifications on the very first run", () => {
@@ -116,7 +105,10 @@ describe("computePollDiff", () => {
     const diff = computePollDiff({
       nowIso: BASE_TIME,
       stories: [makeStory({ storyId: 1001, points: 68, frontpageRank: 9 })],
-      comments: [makeComment({ commentId: 2001 })],
+      comments: [
+        makeComment({ commentId: 2001, kind: "story_comment" }),
+        makeComment({ commentId: 2001, kind: "reply_to_me" }),
+      ],
       existingCommentIds: new Set([2001]),
       existingEvents,
       scoreMilestones: [10, 30, 50, 100],
@@ -125,10 +117,12 @@ describe("computePollDiff", () => {
     expect(diff.isBaselineSeed).toBe(false);
     expect(diff.newCommentsToStore).toHaveLength(0);
 
-    // Comment 2001 had only a failed delivery, so it should be retried.
-    expect(
-      diff.notifications.filter((n) => n.kind === "new_comment"),
-    ).toHaveLength(1);
+    // Comment 2001 had only a failed delivery, so it should be retried once as reply_to_me.
+    const commentAlerts = diff.notifications.filter(
+      (n) => n.kind === "new_comment",
+    );
+    expect(commentAlerts).toHaveLength(1);
+    expect(commentAlerts[0].commentKind).toBe("reply_to_me");
 
     // Jumped from 10 -> 68 across both 30 and 50: emit only the highest (50).
     const milestones = diff.notifications.filter(

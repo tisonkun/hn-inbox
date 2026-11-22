@@ -3,9 +3,11 @@ import {
   queryRecentComments,
   queryRecentEvents,
   queryRecentSnapshots,
+  queryRecentVercelEvents,
   type CommentRow,
   type EventRow,
   type StorySnapshotRow,
+  type VercelEventRow,
 } from "./scopedb";
 
 export type InboxItemStatus = "unread" | "read" | "replied";
@@ -46,17 +48,55 @@ export interface StoryOverviewItem {
   history: StoryTrendPoint[];
 }
 
+export interface ScheduleHealthPoint {
+  eventId: string;
+  occurredAt: string;
+  outcome: VercelEventRow["outcome"];
+  status: number | null;
+  durationMs: number | null;
+  message: string;
+}
+
 export interface DashboardData {
   lastSyncedAt: string | null;
   unreadCount: number;
+  errorCount: number;
+  logsInitialized: boolean;
   comments: InboxCommentItem[];
   stories: StoryOverviewItem[];
+  logs: VercelEventRow[];
+  scheduleHealth: ScheduleHealthPoint[];
+}
+
+export function buildScheduleHealth(
+  logs: VercelEventRow[],
+  limit = 24,
+): ScheduleHealthPoint[] {
+  return logs
+    .filter((log) => log.path === "/api/schedules/poll")
+    .slice(0, limit)
+    .reverse()
+    .map((log) => {
+      const rawDur = log.attributes["duration_ms"];
+      const durationMs =
+        typeof rawDur === "number" && Number.isFinite(rawDur) ? rawDur : null;
+      return {
+        eventId: log.event_id,
+        occurredAt: log.occurred_at,
+        outcome: log.outcome,
+        status: log.status,
+        durationMs,
+        message: log.message,
+      };
+    });
 }
 
 export function buildDashboardData(
   snapshots: StorySnapshotRow[],
   comments: CommentRow[],
   events: EventRow[],
+  logs: VercelEventRow[] = [],
+  logsInitialized = true,
 ): DashboardData {
   // Determine latest inbox status per comment_id (events are sorted DESC by event_time).
   const statusByCommentId = new Map<number, InboxItemStatus>();
@@ -71,7 +111,7 @@ export function buildDashboardData(
     }
   }
 
-  // Deduplicate comments by comment_id (keep earliest observed / latest created).
+  // Deduplicate comments by comment_id.
   const uniqueComments = new Map<number, CommentRow>();
   for (const row of comments) {
     if (!uniqueComments.has(row.comment_id)) {
@@ -143,20 +183,37 @@ export function buildDashboardData(
 
   const lastSyncedAt = snapshots.length > 0 ? snapshots[0].observed_at : null;
   const unreadCount = inboxComments.filter((c) => c.status === "unread").length;
+  const errorCount = logs.filter(
+    (l) => l.level === "error" || l.outcome === "error",
+  ).length;
+  const scheduleHealth = buildScheduleHealth(logs, 24);
 
   return {
     lastSyncedAt,
     unreadCount,
+    errorCount,
+    logsInitialized,
     comments: inboxComments,
     stories,
+    logs,
+    scheduleHealth,
   };
 }
 
 export async function loadDashboardData(): Promise<DashboardData> {
-  const [snapshots, comments, events] = await Promise.all([
+  const [snapshots, comments, events, logsResult] = await Promise.all([
     queryRecentSnapshots(2000),
     queryRecentComments(500),
     queryRecentEvents(3000),
+    queryRecentVercelEvents(100)
+      .then((rows) => ({ ok: true as const, rows }))
+      .catch(() => ({ ok: false as const, rows: [] as VercelEventRow[] })),
   ]);
-  return buildDashboardData(snapshots, comments, events);
+  return buildDashboardData(
+    snapshots,
+    comments,
+    events,
+    logsResult.rows,
+    logsResult.ok,
+  );
 }
