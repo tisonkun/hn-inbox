@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedAdminRequest } from "@/lib/auth";
 import { appendEvents, type EventType } from "@/lib/scopedb";
+import { emitTelemetryAfter } from "@/lib/telemetry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ const ALLOWED_STATUS_MAP: Record<string, EventType> = {
 };
 
 export async function POST(request: Request): Promise<Response> {
+  const startedAt = Date.now();
   if (!isAuthorizedAdminRequest(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -60,6 +62,14 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ ok: true, commentId, status });
   } catch (error) {
     console.error("Failed to update comment inbox state:", error);
+    emitTelemetryAfter({
+      request,
+      status: 500,
+      message: "inbox.state.update_failed",
+      durationMs: Date.now() - startedAt,
+      error,
+      attributes: { comment_id: commentId, target_status: status },
+    });
     return NextResponse.json(
       { error: "Failed to persist status event" },
       { status: 500 },

@@ -10,6 +10,7 @@ import { getScopeDBConfig } from "./config";
 export const TABLE_STORY_SNAPSHOTS = "hn_story_snapshots";
 export const TABLE_COMMENTS = "hn_comments";
 export const TABLE_EVENTS = "hn_events";
+export const TABLE_VERCEL_EVENTS = "vercel_events";
 
 export interface StorySnapshotRow {
   observed_at: string;
@@ -52,6 +53,32 @@ export interface EventRow {
   channel: string;
   status: "ok" | "failed" | "seeded";
   payload: Record<string, unknown>;
+}
+
+/**
+ * Matches the 13-column `scopedb.public.vercel_events` contract defined in
+ * `scopedb/vercel-drain` so prebuilt views (`v_vercel_errors`, `v_vercel_requests`)
+ * work seamlessly with Next.js `after()` application telemetry on any Vercel plan.
+ */
+export interface VercelEventRow {
+  event_id: string;
+  occurred_at: string;
+  service: string;
+  event_type:
+    | "vercel.request"
+    | "vercel.log"
+    | "vercel.pageview"
+    | "vercel.custom_event"
+    | "vercel.web_vital";
+  outcome: "ok" | "client_error" | "error";
+  level: "debug" | "info" | "warn" | "error";
+  method: string | null;
+  host: string | null;
+  path: string | null;
+  status: number | null;
+  request_id: string | null;
+  message: string;
+  attributes: Record<string, unknown>;
 }
 
 export const TABLE_DEFINITIONS: CatalogTable[] = [
@@ -97,6 +124,27 @@ export const TABLE_DEFINITIONS: CatalogTable[] = [
       { name: "payload", data_type: "object" },
     ],
   },
+  {
+    name: TABLE_VERCEL_EVENTS,
+    comment:
+      "Vercel runtime and application telemetry compatible with scopedb/vercel-drain views",
+    columns: [
+      { name: "event_id", data_type: "string" },
+      { name: "occurred_at", data_type: "timestamp" },
+      { name: "service", data_type: "string" },
+      { name: "event_type", data_type: "string" },
+      { name: "outcome", data_type: "string" },
+      { name: "level", data_type: "string" },
+      { name: "method", data_type: "string" },
+      { name: "host", data_type: "string" },
+      { name: "path", data_type: "string" },
+      { name: "status", data_type: "int" },
+      { name: "request_id", data_type: "string" },
+      { name: "message", data_type: "string" },
+      { name: "attributes", data_type: "object" },
+    ],
+    cluster_by: ["service", "occurred_at"],
+  },
 ];
 
 let cachedClient: { key: string; client: Client } | null = null;
@@ -124,6 +172,7 @@ export function getTables() {
     snapshots: client.table(TABLE_STORY_SNAPSHOTS, opts),
     comments: client.table(TABLE_COMMENTS, opts),
     events: client.table(TABLE_EVENTS, opts),
+    vercelEvents: client.table(TABLE_VERCEL_EVENTS, opts),
   };
 }
 
@@ -208,6 +257,30 @@ export async function appendEvents(rows: EventRow[]): Promise<number> {
       channel: r.channel,
       status: r.status,
       payload: r.payload,
+    })),
+  );
+}
+
+export async function appendVercelEvents(
+  rows: VercelEventRow[],
+): Promise<number> {
+  const { vercelEvents } = getTables();
+  return appendRecords(
+    vercelEvents,
+    rows.map((r) => ({
+      event_id: r.event_id,
+      occurred_at: r.occurred_at,
+      service: r.service,
+      event_type: r.event_type,
+      outcome: r.outcome,
+      level: r.level,
+      method: r.method ?? null,
+      host: r.host ?? null,
+      path: r.path ?? null,
+      status: r.status ?? null,
+      request_id: r.request_id ?? null,
+      message: r.message,
+      attributes: r.attributes,
     })),
   );
 }
@@ -315,4 +388,49 @@ export async function queryRecentEvents(limit = 3000): Promise<EventRow[]> {
     status: asString(row["status"]) as EventRow["status"],
     payload: asJsonObject(row["payload"]),
   }));
+}
+
+export async function queryRecentVercelEvents(
+  limit = 100,
+): Promise<VercelEventRow[]> {
+  const { client, vercelEvents } = getTables();
+  const sql = `
+    FROM ${vercelEvents.identifier()}
+    SELECT event_id, occurred_at, service, event_type, outcome, level, method, host, path, status, request_id, message, attributes
+    ORDER BY occurred_at DESC
+    LIMIT ${limit}
+  `;
+  const result = await client.query(sql, { signal: AbortSignal.timeout(15_000) });
+  return result.toObjects({ integerMode: "number" }).map((row) => {
+    const rawOutcome = asString(row["outcome"]);
+    const outcome: VercelEventRow["outcome"] =
+      rawOutcome === "error" || rawOutcome === "client_error"
+        ? rawOutcome
+        : "ok";
+    const rawLevel = asString(row["level"]);
+    const level: VercelEventRow["level"] =
+      rawLevel === "error" ||
+      rawLevel === "warn" ||
+      rawLevel === "debug"
+        ? rawLevel
+        : "info";
+
+    return {
+      event_id: asString(row["event_id"]),
+      occurred_at: asIsoString(row["occurred_at"]),
+      service: asString(row["service"]),
+      event_type: (asString(row["event_type"]) ||
+        "vercel.custom_event") as VercelEventRow["event_type"],
+      outcome,
+      level,
+      method: row["method"] === null ? null : asString(row["method"]),
+      host: row["host"] === null ? null : asString(row["host"]),
+      path: row["path"] === null ? null : asString(row["path"]),
+      status: asNullableNumber(row["status"]),
+      request_id:
+        row["request_id"] === null ? null : asString(row["request_id"]),
+      message: asString(row["message"]),
+      attributes: asJsonObject(row["attributes"]),
+    };
+  });
 }

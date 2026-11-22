@@ -12,10 +12,10 @@ Hacker News intentionally has no built-in notification inbox for replies, score 
   - First-time Front Page (top 30) entry alerts with live rank.
   - External domain or keyword mentions (e.g. when someone submits your blog).
 - **Safe first-run baseline seeding**: The initial poll seeds existing stories and comments into ScopeDB without sending historical email spam.
-- **Append-only ScopeDB storage**: Stores time-series story snapshots (`hn_story_snapshots`), comments (`hn_comments`), and notification/inbox state events (`hn_events`) via the official [`scopedb`](https://www.npmjs.com/package/scopedb) JS/TS SDK without OLTP updates.
+- **Append-only ScopeDB storage**: Stores time-series story snapshots (`hn_story_snapshots`), comments (`hn_comments`), notification/inbox state events (`hn_events`), and Next.js `after()` runtime telemetry (`vercel_events`, aligned with [`scopedb/vercel-drain`](https://github.com/scopedb/vercel-drain)) via the official [`scopedb`](https://www.npmjs.com/package/scopedb) JS/TS SDK without OLTP updates.
 - **Passwordless GitHub OAuth allowlist**: Only GitHub usernames listed in `GITHUB_ALLOWED_USERS` can sign in to the Web Inbox (requesting only `read:user` scope, zero repo permissions).
 - **Pluggable notification channels**: Ships with `ResendEmailChannel` and `GenericWebhookChannel`. Add Feishu, Slack, Telegram, or Discord by implementing `NotificationChannel`.
-- **Web Inbox & Story Trends**: Mark comments as read/replied, jump straight to `news.ycombinator.com/reply?id=...`, copy formatted comment context, and inspect per-story score sparklines.
+- **Web Inbox, Story Trends & Runtime Logs**: Mark comments as read/replied, jump straight to `news.ycombinator.com/reply?id=...`, copy formatted comment context, inspect per-story score sparklines, and monitor 15-minute schedule health and errors in the **Logs** tab (works on Vercel Hobby without Log Drains).
 
 ## Architecture
 

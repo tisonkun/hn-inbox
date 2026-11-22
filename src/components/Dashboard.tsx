@@ -36,8 +36,10 @@ export function Dashboard({
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(initialData);
   const [error, setError] = useState<string | null>(initialError);
-  const [tab, setTab] = useState<"inbox" | "stories">("inbox");
+  const [tab, setTab] = useState<"inbox" | "stories" | "logs">("inbox");
   const [filter, setFilter] = useState<"unread" | "all" | "replied">("unread");
+  const [logFilter, setLogFilter] = useState<"all" | "errors" | "polls">("all");
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -162,6 +164,16 @@ export function Dashboard({
     return true;
   });
 
+  const visibleLogs = (data?.logs ?? []).filter((l) => {
+    if (logFilter === "errors") {
+      return l.level === "error" || l.outcome === "error";
+    }
+    if (logFilter === "polls") {
+      return l.path === "/api/schedules/poll" || l.path === "/api/sync";
+    }
+    return true;
+  });
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 pb-4">
@@ -228,7 +240,7 @@ export function Dashboard({
         </div>
       )}
 
-      <nav className="mb-5 flex items-center justify-between gap-4">
+      <nav className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-1 rounded-lg bg-stone-200/70 p-1">
           <button
             type="button"
@@ -257,6 +269,22 @@ export function Dashboard({
           >
             Stories ({data?.stories.length ?? 0})
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("logs")}
+            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
+              tab === "logs"
+                ? "bg-white text-stone-900 shadow-2xs"
+                : "text-stone-600 hover:text-stone-900"
+            }`}
+          >
+            Logs
+            {(data?.errorCount ?? 0) > 0 && (
+              <span className="ml-1.5 rounded-full bg-red-600 px-1.5 py-0.5 text-xs text-white">
+                {data?.errorCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {tab === "inbox" && (
@@ -268,6 +296,25 @@ export function Dashboard({
                 onClick={() => setFilter(f)}
                 className={`rounded-md px-2.5 py-1 font-medium capitalize transition ${
                   filter === f
+                    ? "bg-stone-900 text-white"
+                    : "text-stone-600 hover:bg-stone-200/70"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === "logs" && (
+          <div className="flex items-center gap-1 text-xs">
+            {(["all", "errors", "polls"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setLogFilter(f)}
+                className={`rounded-md px-2.5 py-1 font-medium capitalize transition ${
+                  logFilter === f
                     ? "bg-stone-900 text-white"
                     : "text-stone-600 hover:bg-stone-200/70"
                 }`}
@@ -389,7 +436,7 @@ export function Dashboard({
             ))
           )}
         </section>
-      ) : (
+      ) : tab === "stories" ? (
         <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
           {(data?.stories.length ?? 0) === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-stone-500">
@@ -449,6 +496,130 @@ export function Dashboard({
               ))}
             </ul>
           )}
+        </section>
+      ) : (
+        <section className="space-y-4">
+          {data && !data.logsInitialized && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <span>
+                The <code className="font-mono">vercel_events</code> telemetry
+                table is not initialized yet.
+              </span>
+              <button
+                type="button"
+                onClick={handleInitDb}
+                disabled={initializing}
+                className="rounded-md bg-amber-800 px-3 py-1 text-xs font-medium text-white hover:bg-amber-900 disabled:opacity-50"
+              >
+                {initializing ? "Initializing..." : "Initialize ScopeDB Tables"}
+              </button>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-stone-200 bg-white p-4">
+            <div className="mb-2.5 flex items-center justify-between text-xs text-stone-500">
+              <span className="font-medium text-stone-800">
+                Scheduled Poll Health (last {data?.scheduleHealth.length ?? 0}{" "}
+                runs)
+              </span>
+              <span>/api/schedules/poll</span>
+            </div>
+            {(data?.scheduleHealth.length ?? 0) === 0 ? (
+              <p className="text-xs text-stone-400">
+                No scheduled poll telemetry recorded yet. Runs appear here after
+                Vercel Schedules invokes /api/schedules/poll.
+              </p>
+            ) : (
+              <div className="flex items-end gap-1.5">
+                {data?.scheduleHealth.map((pt) => {
+                  const color =
+                    pt.outcome === "error"
+                      ? "bg-red-500"
+                      : pt.outcome === "client_error"
+                        ? "bg-amber-400"
+                        : "bg-emerald-500";
+                  return (
+                    <div
+                      key={pt.eventId}
+                      title={`${pt.message} · ${pt.status ?? "n/a"} · ${pt.durationMs !== null ? `${pt.durationMs}ms` : "n/a"} · ${pt.occurredAt}`}
+                      className={`h-6 flex-1 rounded-xs ${color}`}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+            {visibleLogs.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-stone-500">
+                No matching telemetry events recorded yet.
+              </div>
+            ) : (
+              <ul className="divide-y divide-stone-200">
+                {visibleLogs.map((log) => {
+                  const isExpanded = expandedLogId === log.event_id;
+                  const duration =
+                    typeof log.attributes["duration_ms"] === "number"
+                      ? `${log.attributes["duration_ms"]}ms`
+                      : null;
+                  const badgeStyle =
+                    log.outcome === "error" || log.level === "error"
+                      ? "bg-red-100 text-red-800"
+                      : log.outcome === "client_error" || log.level === "warn"
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-emerald-100 text-emerald-800";
+
+                  return (
+                    <li key={log.event_id} className="px-5 py-3.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedLogId(isExpanded ? null : log.event_id)
+                        }
+                        className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
+                      >
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+                          <span
+                            className={`rounded-full px-2 py-0.5 font-medium ${badgeStyle}`}
+                          >
+                            {log.status ?? log.level}
+                          </span>
+                          <span className="font-mono font-medium text-stone-900">
+                            {log.message}
+                          </span>
+                          {log.path && (
+                            <span className="font-mono text-stone-500">
+                              {log.method ? `${log.method} ` : ""}
+                              {log.path}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-stone-400">
+                          {duration && <span>{duration}</span>}
+                          <span>{formatRelativeTime(log.occurred_at)}</span>
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="mt-3 space-y-2 rounded-lg bg-stone-50 p-3 text-xs">
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-stone-500">
+                            <span>time: {log.occurred_at}</span>
+                            {log.request_id && (
+                              <span>request_id: {log.request_id}</span>
+                            )}
+                          </div>
+                          <pre className="overflow-x-auto font-mono text-stone-800">
+                            {JSON.stringify(log.attributes, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </section>
       )}
     </div>
