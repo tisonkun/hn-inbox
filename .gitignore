@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Next.js & Vercel
+.next/
+out/
+.vercel/
+next-env.d.ts
+
+# Environment & secrets (never commit local env files)
+.env
+.env.*
+!.env.example
+
+# Misc
+.DS_Store
+*.tsbuildinfo
+*.log
+coverage/

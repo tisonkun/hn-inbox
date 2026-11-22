@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "schedules": {
+    "hn-poll": {
+      "schedule": "*/15 * * * *",
+      "jitter": 15,
+      "path": "/api/schedules/poll",
+      "requestMethod": "POST"
+    }
+  }
+}
