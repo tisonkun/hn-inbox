@@ -61,16 +61,11 @@ Copy `.env.example` to `.env.local` for local scripts (never commit `.env.local`
 | `EMAIL_TO` | No* | Comma-separated recipient email addresses. |
 | `WEBHOOK_URL` | No | Optional JSON webhook endpoint for additional integrations. |
 
-### 3. Initialize ScopeDB Tables
+### 3. ScopeDB Catalog Alignment (Automatic on Production Deploy)
 
-Install dependencies and run the idempotent catalog initializer:
+Production deployments on Vercel automatically run `pnpm run build:vercel` (`next build && tsx scripts/init-scopedb.ts --on-deploy`), which idempotently applies all ScopeDB table definitions when `VERCEL_ENV=production` and ScopeDB credentials are present. Preview deploys and local builds skip it, and transient ScopeDB errors during deploy log a warning without blocking the build.
 
-```bash
-pnpm install
-pnpm run init:db
-```
-
-Alternatively, after deploying to Vercel and signing in with GitHub, click **Initialize ScopeDB Tables** in the Web Inbox UI (or send an authenticated `POST /api/init` request).
+You can also initialize or reconcile tables manually at any time via CLI (`pnpm run init:db`), the fallback button in the Web Inbox UI, or an authenticated `POST /api/init` request.
 
 ### 4. Deploy to Vercel
 
