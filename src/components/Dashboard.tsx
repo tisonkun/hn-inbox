@@ -40,6 +40,7 @@ export function Dashboard({
   const [filter, setFilter] = useState<"unread" | "all" | "replied">("unread");
   const [logFilter, setLogFilter] = useState<"all" | "errors" | "polls">("all");
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [ackingLogs, setAckingLogs] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -151,6 +152,40 @@ export function Dashboard({
     setTimeout(() => {
       setCopiedId((cur) => (cur === comment.commentId ? null : cur));
     }, 2000);
+  }
+
+  async function handleAckErrors() {
+    if (!data || data.errorCount === 0) return;
+    setAckingLogs(true);
+    setError(null);
+    const prev = data;
+    const latestError = data.logs.find(
+      (l) => l.level === "error" || l.outcome === "error",
+    );
+    const ackedUntil = latestError?.occurred_at ?? new Date().toISOString();
+
+    setData({
+      ...data,
+      errorCount: 0,
+      logsAckedAt: ackedUntil,
+    });
+
+    try {
+      const res = await fetch("/api/logs/ack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ackedUntil }),
+      });
+      if (!res.ok) {
+        setData(prev);
+        setError("Failed to acknowledge log errors");
+      }
+    } catch {
+      setData(prev);
+      setError("Network error while acknowledging log errors");
+    } finally {
+      setAckingLogs(false);
+    }
   }
 
   async function handleLogout() {
@@ -307,21 +342,33 @@ export function Dashboard({
         )}
 
         {tab === "logs" && (
-          <div className="flex items-center gap-1 text-xs">
-            {(["all", "errors", "polls"] as const).map((f) => (
+          <div className="flex items-center gap-2 text-xs">
+            {(data?.errorCount ?? 0) > 0 && (
               <button
-                key={f}
                 type="button"
-                onClick={() => setLogFilter(f)}
-                className={`rounded-md px-2.5 py-1 font-medium capitalize transition ${
-                  logFilter === f
-                    ? "bg-stone-900 text-white"
-                    : "text-stone-600 hover:bg-stone-200/70"
-                }`}
+                onClick={handleAckErrors}
+                disabled={ackingLogs}
+                className="rounded-md border border-stone-300 bg-white px-2.5 py-1 font-medium text-stone-700 transition hover:bg-stone-100 disabled:opacity-50"
               >
-                {f}
+                {ackingLogs ? "Clearing..." : "Mark Errors Seen"}
               </button>
-            ))}
+            )}
+            <div className="flex items-center gap-1">
+              {(["all", "errors", "polls"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setLogFilter(f)}
+                  className={`rounded-md px-2.5 py-1 font-medium capitalize transition ${
+                    logFilter === f
+                      ? "bg-stone-900 text-white"
+                      : "text-stone-600 hover:bg-stone-200/70"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </nav>

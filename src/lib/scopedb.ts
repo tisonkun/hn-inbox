@@ -44,7 +44,8 @@ export type EventType =
   | "notified_mention"
   | "inbox_read"
   | "inbox_replied"
-  | "inbox_unread";
+  | "inbox_unread"
+  | "logs_acked";
 
 export interface EventRow {
   event_time: string;
@@ -333,7 +334,7 @@ export async function queryRecentSnapshots(
     ORDER BY observed_at DESC
     LIMIT ${limit}
   `;
-  const result = await client.query(sql, { signal: AbortSignal.timeout(15_000) });
+  const result = await client.query(sql, { signal: AbortSignal.timeout(25_000) });
   return result.toObjects({ integerMode: "number" }).map((row) => ({
     observed_at: asIsoString(row["observed_at"]),
     story_id: asNumber(row["story_id"]),
@@ -356,7 +357,7 @@ export async function queryRecentComments(limit = 500): Promise<CommentRow[]> {
     ORDER BY created_at DESC
     LIMIT ${limit}
   `;
-  const result = await client.query(sql, { signal: AbortSignal.timeout(15_000) });
+  const result = await client.query(sql, { signal: AbortSignal.timeout(25_000) });
   return result.toObjects({ integerMode: "number" }).map((row) => ({
     observed_at: asIsoString(row["observed_at"]),
     comment_id: asNumber(row["comment_id"]),
@@ -379,7 +380,7 @@ export async function queryRecentEvents(limit = 3000): Promise<EventRow[]> {
     ORDER BY event_time DESC
     LIMIT ${limit}
   `;
-  const result = await client.query(sql, { signal: AbortSignal.timeout(15_000) });
+  const result = await client.query(sql, { signal: AbortSignal.timeout(25_000) });
   return result.toObjects({ integerMode: "number" }).map((row) => ({
     event_time: asIsoString(row["event_time"]),
     event_type: asString(row["event_type"]) as EventType,
@@ -400,7 +401,7 @@ export async function queryRecentVercelEvents(
     ORDER BY occurred_at DESC
     LIMIT ${limit}
   `;
-  const result = await client.query(sql, { signal: AbortSignal.timeout(15_000) });
+  const result = await client.query(sql, { signal: AbortSignal.timeout(25_000) });
   return result.toObjects({ integerMode: "number" }).map((row) => {
     const rawOutcome = asString(row["outcome"]);
     const outcome: VercelEventRow["outcome"] =
