@@ -22,7 +22,6 @@ import {
   appendStorySnapshots,
   queryRecentComments,
   queryRecentEvents,
-  queryRecentSnapshots,
   type CommentRow,
   type EventRow,
   type StorySnapshotRow,
@@ -412,8 +411,6 @@ export async function runPollCycle(
   const [existingComments, existingEvents] = await Promise.all([
     queryRecentComments(1000),
     queryRecentEvents(3000),
-    // Keep snapshots table warm / verified if needed.
-    queryRecentSnapshots(1),
   ]);
 
   const existingCommentIds = new Set(existingComments.map((c) => c.comment_id));

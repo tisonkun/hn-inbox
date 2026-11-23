@@ -61,6 +61,7 @@ export interface DashboardData {
   lastSyncedAt: string | null;
   unreadCount: number;
   errorCount: number;
+  logsAckedAt: string | null;
   logsInitialized: boolean;
   comments: InboxCommentItem[];
   stories: StoryOverviewItem[];
@@ -183,8 +184,24 @@ export function buildDashboardData(
 
   const lastSyncedAt = snapshots.length > 0 ? snapshots[0].observed_at : null;
   const unreadCount = inboxComments.filter((c) => c.status === "unread").length;
+
+  // Latest logs_acked watermark (events are ordered DESC by event_time).
+  let logsAckedAt: string | null = null;
+  for (const ev of events) {
+    if (ev.event_type === "logs_acked" && ev.status === "ok") {
+      const explicit = ev.payload["acked_until"];
+      logsAckedAt =
+        typeof explicit === "string" && Number.isFinite(Date.parse(explicit))
+          ? explicit
+          : ev.event_time;
+      break;
+    }
+  }
+  const ackedMs = logsAckedAt ? Date.parse(logsAckedAt) : Number.NEGATIVE_INFINITY;
   const errorCount = logs.filter(
-    (l) => l.level === "error" || l.outcome === "error",
+    (l) =>
+      (l.level === "error" || l.outcome === "error") &&
+      Date.parse(l.occurred_at) > ackedMs,
   ).length;
   const scheduleHealth = buildScheduleHealth(logs, 24);
 
@@ -192,6 +209,7 @@ export function buildDashboardData(
     lastSyncedAt,
     unreadCount,
     errorCount,
+    logsAckedAt,
     logsInitialized,
     comments: inboxComments,
     stories,
